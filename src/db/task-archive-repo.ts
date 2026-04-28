@@ -30,16 +30,16 @@ export const TaskArchiveRepo = {
     task_brief?: string;
     goal?: string;
   }): Promise<{ id: string }> {
-    const id = uuid();
+    // 用传入的 task_id 作为主键，这样 pollArchiveAndYield(taskId) 能直接 getById 找到
+    const id = input.task_id ?? uuid();
     await query(
       `INSERT INTO task_archives
-        (id, task_id, session_id, user_id, manager_decision, command,
-         user_input, task_brief, goal, state, status, constraints,
+        (id, session_id, user_id, manager_decision, command,
+         user_input, task_brief, state, status, constraints,
          fast_observations, slow_execution)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'delegated','pending','{}','[]','{}')`,
+       VALUES ($1,$2,$3,$4,COALESCE($5,'{}'),$6,$7,'delegated','pending','{}','[]','{}')`,
       [
         id,
-        input.task_id ?? null,
         input.session_id,
         input.user_id,
         JSON.stringify(input.decision),
@@ -47,7 +47,6 @@ export const TaskArchiveRepo = {
         input.decision.command ? JSON.stringify(input.decision.command) : null,
         input.user_input,
         input.task_brief ? JSON.stringify({ brief: input.task_brief, goal: input.goal }) : null,
-        input.goal ?? null,
       ]
     );
     return { id };
@@ -89,9 +88,20 @@ export const TaskArchiveRepo = {
     archiveId: string,
     newState: string
   ): Promise<void> {
+    // 同时更新 status（供 sse-poller.ts 轮询感知）
+    // state: chattering/clarifying/delegated/running/done/failed/cancelled
+    // status: pending/running/done/failed/cancelled（与 state 语义对齐）
+    const statusMap: Record<string, string> = {
+      delegated: "pending",
+      running: "running",
+      done: "done",
+      failed: "failed",
+      cancelled: "cancelled",
+    };
+    const newStatus = statusMap[newState] ?? "pending";
     await query(
-      `UPDATE task_archives SET state = $1 WHERE id = $2`,
-      [newState, archiveId]
+      `UPDATE task_archives SET state = $1, status = $2 WHERE id = $3`,
+      [newState, newStatus, archiveId]
     );
   },
 
