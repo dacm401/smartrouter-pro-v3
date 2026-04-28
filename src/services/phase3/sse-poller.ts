@@ -206,6 +206,7 @@ export async function* pollArchiveAndYield(
   const msgs = MESSAGES[lang] ?? MESSAGES.zh;
   const startTime = Date.now();
   let lastStatusTime = startTime;
+  let lastPingTime = startTime;
   let sentResult = false;
 
   while (true) {
@@ -213,6 +214,12 @@ export async function* pollArchiveAndYield(
     if (!task) break;
 
     const elapsed = Date.now() - startTime;
+
+    // SSE Keepalive ping：每 15s 发一次，防止浏览器/代理断连
+    if (elapsed - lastPingTime >= 15000) {
+      yield { type: "status", stream: "", routing_layer: "L2" }; // 空内容，客户端忽略但保活
+      lastPingTime = Date.now();
+    }
 
     // 安抚消息（30s / 60s / 120s 节点）
     if (task.status === "running" || task.status === "pending") {

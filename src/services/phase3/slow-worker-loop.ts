@@ -11,7 +11,8 @@
 //          调用 startSlowWorker() 启动（fire-and-forget）
 
 import { config } from "../../config.js";
-import { callModelFull, callOpenAIWithOptions } from "../../models/model-gateway.js";
+import { callModelFull } from "../../models/model-gateway.js";
+import type { ModelResponse } from "../../models/providers/base-provider.js";
 import { TaskArchiveRepo, TaskCommandRepo, TaskWorkerResultRepo } from "../../db/task-archive-repo.js";
 import type { ChatMessage, CommandPayload, WorkerResult } from "../../types/index.js";
 
@@ -45,6 +46,24 @@ async function loadArchiveContext(archiveId: string): Promise<{
     userInput: archive.user_input ?? "",
     constraints: archive.constraints ?? [],
   };
+}
+
+// 带超时的模型调用包装器
+async function callModelWithTimeout(
+  model: string,
+  messages: ChatMessage[],
+  timeoutMs = 60_000
+): Promise<ModelResponse> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await callModelFull(model, messages);
+    clearTimeout(timer);
+    return resp;
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }
 
 // 执行单个 delegate 命令
@@ -98,14 +117,14 @@ async function executeDelegateCommand(
       { role: "user", content: payload_json.task_brief ?? "" },
     ];
 
-    // 调用 Slow 模型
+    // 调用 Slow 模型（60s 超时，防止 Worker 永久挂死）
     const slowModel = config.slowModel;
     let content: string;
     let inputTokens = 0;
     let outputTokens = 0;
 
     try {
-      const resp = await callModelFull(slowModel, messages);
+      const resp = await callModelWithTimeout(slowModel, messages, 60_000);
       content = resp.content;
       inputTokens = resp.input_tokens ?? 0;
       outputTokens = resp.output_tokens ?? 0;
