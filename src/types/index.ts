@@ -119,6 +119,8 @@ export interface ChatRequest {
   preferences?: { mode: "quality" | "balanced" | "cost"; compression_level?: CompressionLevel };
   /** 前端设置透传：可覆盖后端环境变量 */
   api_key?: string;
+  /** 前端设置透传：LLM API Base URL（Sprint 72 reqBaseUrl 透传） */
+  llm_base_url?: string;
   fast_model?: string;
   slow_model?: string;
   /** EL-003: If true, route this request through TaskPlanner + ExecutionLoop (multi-step execution). */

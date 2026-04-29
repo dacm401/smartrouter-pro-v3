@@ -278,6 +278,8 @@ export interface LLMNativeRouterInput {
   history: ChatMessage[];
   language: "zh" | "en";
   reqApiKey?: string;
+  /** Sprint 72: 用户在前端设置的 LLM API URL，优先于 config.openaiBaseUrl */
+  reqBaseUrl?: string;
   /** Sprint 63: 跨会话上下文（active task + history facts） */
   crossSessionContext?: string;
 }
@@ -314,10 +316,10 @@ export interface LLMNativeRouterResult {
 export async function routeWithManagerDecision(
   input: LLMNativeRouterInput
 ): Promise<LLMNativeRouterResult> {
-  const { message, user_id, session_id, turn_id, history, language, reqApiKey, crossSessionContext } = input;
+  const { message, user_id, session_id, turn_id, history, language, reqApiKey, reqBaseUrl, crossSessionContext } = input;
 
   // Step 1: 调用 Fast 模型，传递 Manager Prompt（含 cross-session 上下文）
-  const managerOutput = await callManagerModel({ message, history, language, reqApiKey, crossSessionContext });
+  const managerOutput = await callManagerModel({ message, history, language, reqApiKey, reqBaseUrl, crossSessionContext });
 
   // Step 1.5 (KB-1): 检测知识边界信号
   // fail-open：检测异常不阻断主流程，只记录 warning
@@ -366,10 +368,12 @@ async function callManagerModel(input: {
   history: ChatMessage[];
   language: "zh" | "en";
   reqApiKey?: string;
+  /** Sprint 72: 用户在前端设置的 LLM API URL，优先于 config.openaiBaseUrl */
+  reqBaseUrl?: string;
   /** Sprint 63: cross-session context */
   crossSessionContext?: string;
 }): Promise<string> {
-  const { message, history, language, reqApiKey, crossSessionContext } = input;
+  const { message, history, language, reqApiKey, reqBaseUrl, crossSessionContext } = input;
 
   const systemPrompt = buildManagerSystemPrompt(language, crossSessionContext);
   // 保留最近 6 轮对话作为上下文，不传全量 history（Manager 只读当前任务）
@@ -387,7 +391,7 @@ async function callManagerModel(input: {
         config.fastModel,
         messages,
         reqApiKey,
-        config.openaiBaseUrl || undefined
+        reqBaseUrl || config.openaiBaseUrl || undefined
       );
       return resp.content;
     }
@@ -593,7 +597,7 @@ async function routeByDecision(
 
     case "ask_clarification": {
       const cq = decision.clarification as ClarifyQuestion | undefined;
-      const questionText = cq?.question_text ?? (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?");
+      const questionText = cq?.question_text?.trim() || (language === "zh" ? "能再具体一点吗？" : "Could you be more specific?");
       const clarifyingMessage = cq?.options?.length
         ? `${questionText} ${cq.options.map((o) => `"${o.label}"`).join(" / ")}`
         : questionText;

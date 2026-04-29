@@ -117,6 +117,8 @@ async function executePlanCommand(
       confidence: 0.80,
       completed_at: new Date().toISOString(),
     });
+    // ✅ 通知 SSE poller：任务完成（sse-poller.ts line 241 依赖 status === "done"）
+    await TaskArchiveRepo.updateState(archive_id, "done");
 
     // 更新 task_commands 状态为 completed
     await TaskCommandRepo.updateStatus(id, "completed", { finished_at: new Date() });
@@ -132,12 +134,12 @@ async function executePlanCommand(
         error_message: err.message,
       });
       await TaskArchiveRepo.updateState(archive_id, "failed");
-      await TaskArchiveRepo.updateState(archive_id, "failed");
       await TaskArchiveRepo.setSlowExecution(archive_id, {
         result: "",
         errors: [err.message],
         completed_at: new Date().toISOString(),
       });
+      await TaskArchiveRepo.updateState(archive_id, "failed");
     } catch (updateErr: any) {
       console.error("[execute-worker] Failed to update status:", updateErr.message);
     }

@@ -80,8 +80,9 @@ chatRouter.post("/chat", async (c) => {
     }
   }
 
-  // 请求级覆盖：前端设置里的 Key / 模型优先于环境变量
+  // 请求级覆盖：前端设置里的 Key / URL / 模型优先于环境变量
   const reqApiKey = body.api_key || undefined;
+  const reqBaseUrl = body.llm_base_url || undefined;
   const effectiveFastModel = body.fast_model || config.fastModel;
   const effectiveSlowModel = body.slow_model || config.slowModel;
 
@@ -112,7 +113,23 @@ chatRouter.post("/chat", async (c) => {
     const useLLMNative = body.use_llm_native_routing !== false; // 默认 true
 
     if (!useLLMNative) {
-      return c.json({ error: "Legacy routing path (use_llm_native_routing=false) has been removed. Please remove this flag." }, 400);
+      // Sprint 72 Plan B: 轻量降级，不触发委托（orchestrator 已移除），返回 200 而非 400
+      // 内联语言检测：无需等待 features 提取
+      const msgText = body.message ?? "";
+      const chineseChars = msgText.match(/[\u4e00-\u9fff]/g);
+      const lang = (chineseChars && chineseChars.length > msgText.length * 0.1) ? "zh" : "en";
+      const msg = lang === "zh"
+        ? "智能路由服务已升级，旧版路由标识已停用。当前请求已记录，将在服务恢复后继续处理。"
+        : "Smart routing has been upgraded. The legacy routing flag is deprecated. Your request has been logged.";
+      console.warn(`[chat] use_llm_native_routing=false fallback triggered by session ${sessionId}`);
+      return c.json({
+        error: null,
+        message: msg,
+        decision_type: "direct_answer",
+        routing_layer: "fallback",
+        delegation: null,
+        archive_id: null,
+      }, 200);
     }
 
     // Sprint 69: 轻量 features 提取（仅用于 logDecision / execute mode）
@@ -163,12 +180,27 @@ chatRouter.post("/chat", async (c) => {
           history: body.history ?? [],
           language: features.language as "zh" | "en",
           reqApiKey,
+          reqBaseUrl,
           crossSessionContext,
         });
         console.log("[chat] routeWithManagerDecision done, decision_type:", llmNativeResult?.decision_type, "delegation:", !!llmNativeResult?.delegation);
       } catch (e: any) {
-        console.warn("[stream-llm] routeWithManagerDecision failed:", e.message);
-        return c.json({ error: "LLM-native routing failed: " + e.message }, 500);
+        // Sprint 72 Plan B: LLM 路由异常 → 降级 JSON 而非 500
+        // SSE stream 未启动，无法写 SSE 事件；复用 SSE manager_decision JSON 结构
+        const msgText = body.message ?? "";
+        const chineseChars = msgText.match(/[\u4e00-\u9fff]/g);
+        const lang = (chineseChars && chineseChars.length > msgText.length * 0.1) ? "zh" : "en";
+        const msg = lang === "zh"
+          ? "智能路由服务暂时不可用，请稍后重试。"
+          : "Smart routing temporarily unavailable, please retry.";
+        console.warn(`[stream-llm] routeWithManagerDecision failed (session=${sessionId}):`, e.message);
+        return c.json({
+          type: "manager_decision",
+          decision_type: "direct_answer",
+          routing_layer: "fallback",
+          content: msg,
+          error: e.message,
+        }, 200);
       }
 
       if (!llmNativeResult) {
@@ -315,6 +347,7 @@ chatRouter.post("/chat", async (c) => {
         history: body.history ?? [],
         language: features.language as "zh" | "en",
         reqApiKey,
+        reqBaseUrl,
         crossSessionContext,
       });
     } catch (e: any) {

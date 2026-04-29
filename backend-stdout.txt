@@ -1,0 +1,12 @@
+
+╔══════════════════════════════════════════╗
+║     SmartRouter Pro v1.0               ║
+║     透明的、会成长的 AI 智能运行时       ║
+║     Port: 3001                          ║
+╚══════════════════════════════════════════╝
+
+  ✅ Database connected (43ms)
+  → Auth: using dev fallback (admin:changeme) ⚠  set AUTH_USERS for production
+
+[slow-worker] Starting slow worker loop...
+[execute-worker] Starting execute worker loop...

@@ -54,4 +54,49 @@ export const HARD_POLICY_RULES: HardPolicyRule[] = [
     action: "boost",
     target: "ask_clarification",
   },
+  // ── Sprint 70 fix: needs_external_tool / requires_multi_step / needs_long_reasoning
+  // 根因：LLM 将"查AAPL股价"判定为 direct_answer（L0），Hard Policy 无拦截规则
+  // 修复：外部工具/多步/长推理场景 → 禁止 direct_answer + 抬升 delegate_to_slow
+  {
+    id: "external_tool_blocks_direct_answer",
+    description: "需要外部工具时禁止 direct_answer",
+    condition: (f) => f.needs_external_tool,
+    action: "block",
+    target: "direct_answer",
+  },
+  {
+    id: "external_tool_boosts_delegate",
+    description: "需要外部工具时抬升 delegate_to_slow（弥补阈值差距）",
+    condition: (f) => f.needs_external_tool,
+    action: "boost",
+    target: "delegate_to_slow",
+  },
+  {
+    id: "multi_step_blocks_direct_answer",
+    description: "多步操作时禁止 direct_answer",
+    condition: (f) => f.requires_multi_step,
+    action: "block",
+    target: "direct_answer",
+  },
+  {
+    id: "multi_step_boosts_delegate",
+    description: "多步操作时抬升 delegate_to_slow",
+    condition: (f) => f.requires_multi_step,
+    action: "boost",
+    target: "delegate_to_slow",
+  },
+  {
+    id: "long_reasoning_blocks_direct_answer",
+    description: "长链推理时禁止 direct_answer",
+    condition: (f) => f.needs_long_reasoning,
+    action: "block",
+    target: "direct_answer",
+  },
+  {
+    id: "long_reasoning_boosts_delegate",
+    description: "长链推理时抬升 delegate_to_slow",
+    condition: (f) => f.needs_long_reasoning,
+    action: "boost",
+    target: "delegate_to_slow",
+  },
 ];

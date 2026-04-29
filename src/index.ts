@@ -27,6 +27,14 @@ import { startExecuteWorker } from "./services/phase3/execute-worker-loop.js";
 const app = new Hono();
 
 app.use("/*", cors());
+// Sprint 71 debug: log OPTIONS preflight
+app.use("*", async (c, next) => {
+  if (c.req.method === "OPTIONS") {
+    console.log("[CORS] OPTIONS preflight for", c.req.path);
+    return new Response(null, { status: 204 });
+  }
+  return next();
+});
 // P2-2: Rate limiting — runs before identity so even unauthenticated callers are throttled
 app.use("/api/*", rateLimitMiddleware);
 app.use("/v1/*", rateLimitMiddleware);

@@ -23,8 +23,9 @@ import { callModelWithTools } from "../models/model-gateway.js";
 import { toolRegistry } from "../tools/registry.js";
 import { TaskRepo } from "../db/repositories.js";
 
-/** Planning model: defaults to slow (capable) model for reliable structured output */
-const DEFAULT_PLANNER_MODEL = "gpt-4o";
+/** Planning model: use configured slow model (Qwen2.5-72B via OpenRouter) */
+import { config } from "../config.js";
+const DEFAULT_PLANNER_MODEL = config.slowModel;
 
 /** The tool name the model calls to submit a plan */
 const PLANNER_TOOL_NAME = "plan_task";

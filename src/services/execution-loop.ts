@@ -20,6 +20,7 @@
  */
 
 import { v4 as uuid } from "uuid";
+import { config } from "../config.js";
 import type { ChatMessage } from "../types/index.js";
 import type { ExecutionPlan, ExecutionStep } from "../types/index.js";
 import { callModelWithTools, callModelFull } from "../models/model-gateway.js";
@@ -31,7 +32,7 @@ import { TaskRepo } from "../db/repositories.js";
 
 const DEFAULT_MAX_STEPS = 10;
 const DEFAULT_MAX_TOOL_CALLS = 20;
-const DEFAULT_SLOW_MODEL = "gpt-4o";
+const DEFAULT_SLOW_MODEL = config.slowModel;
 
 /** Context for a single execution run */
 export interface LoopContext {
