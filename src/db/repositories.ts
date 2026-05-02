@@ -38,7 +38,11 @@ export const DecisionRepo = {
   },
 
   async getRecent(userId: string, limit = 20): Promise<any[]> {
-    const result = await query(`SELECT * FROM decision_logs WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`, [userId, limit]);
+    // delegation_logs 是系统实际写入的表，decision_logs 已废弃
+    const result = await query(
+      `SELECT * FROM delegation_logs WHERE user_id=$1 ORDER BY created_at DESC LIMIT $2`,
+      [userId, limit]
+    );
     return result.rows;
   },
 
@@ -64,50 +68,37 @@ export const DecisionRepo = {
   },
 
   async getTodayStats(userId: string): Promise<any> {
+    // delegation_logs 是系统实际写入的表，decision_logs 已废弃
     const result = await query(
-      `WITH base AS (
-        SELECT
-          d.id,
-          d.selected_role,
-          d.exec_input_tokens,
-          d.exec_output_tokens,
-          d.total_cost_usd,
-          d.latency_ms,
-          d.did_fallback,
-          d.cost_saved_vs_slow,
-          d.feedback_score,
-          fe.signal_level,
-          -- L1 signal: feedback_events.signal_level <= 1,
-          -- OR legacy: no feedback_events record but decision_logs.feedback_score IS NOT NULL
-          CASE
-            WHEN fe.signal_level IS NOT NULL AND fe.signal_level <= 1 THEN true
-            WHEN fe.signal_level IS NULL AND d.feedback_score IS NOT NULL THEN true
-            ELSE false
-          END as has_l1_signal
-        FROM decision_logs d
-        LEFT JOIN feedback_events fe ON fe.decision_id = d.id AND fe.user_id = d.user_id
-        WHERE d.user_id = $1 AND d.created_at >= CURRENT_DATE
-      )
-      SELECT
+      `SELECT
         COUNT(*)::int as total_requests,
-        COUNT(*) FILTER (WHERE selected_role = 'fast')::int as fast_count,
-        COUNT(*) FILTER (WHERE selected_role = 'slow')::int as slow_count,
-        COUNT(*) FILTER (WHERE did_fallback = true)::int as fallback_count,
-        COALESCE(SUM(exec_input_tokens + exec_output_tokens), 0)::int as total_tokens,
-        COALESCE(SUM(total_cost_usd), 0)::float as total_cost,
-        COALESCE(SUM(cost_saved_vs_slow), 0)::float as saved_cost,
+        COUNT(*) FILTER (WHERE routed_action = 'direct_answer')::int as fast_count,
+        COUNT(*) FILTER (WHERE routed_action IN ('delegate_to_slow', 'execute_task'))::int as slow_count,
+        COUNT(*) FILTER (WHERE execution_status = 'timeout' OR execution_status = 'error')::int as fallback_count,
+        COALESCE(SUM(latency_ms), 0)::int as total_latency,
+        COALESCE(SUM(cost_usd), 0)::float as total_cost,
+        0::float as saved_cost,
         COALESCE(AVG(latency_ms), 0)::int as avg_latency,
-        CASE WHEN COUNT(*) FILTER (WHERE has_l1_signal = true) > 0
-          THEN ROUND(
-            COUNT(*) FILTER (WHERE has_l1_signal = true AND base.feedback_score > 0)::float /
-            COUNT(*) FILTER (WHERE has_l1_signal = true)::float * 100
-          )
-          ELSE 0 END as satisfaction_rate
-      FROM base
-      WHERE has_l1_signal = true OR has_l1_signal = false`,
+        0 as satisfaction_rate
+      FROM delegation_logs
+      WHERE user_id = $1 AND created_at >= CURRENT_DATE`,
       [userId]
     );
-    return result.rows[0];
+    const row = result.rows[0] || {};
+    // saved_cost 暂时无法计算（需要 baseline 对比），保留 0
+    // satisfaction_rate 需要从 feedback_events 关联，暂保留 0
+    return {
+      total_requests: Number(row.total_requests) || 0,
+      fast_count: Number(row.fast_count) || 0,
+      slow_count: Number(row.slow_count) || 0,
+      fallback_count: Number(row.fallback_count) || 0,
+      total_tokens: 0, // delegation_logs 无 token 字段
+      total_cost: Number(row.total_cost) || 0,
+      saved_cost: 0,
+      saving_rate: 0,
+      avg_latency_ms: Number(row.avg_latency) || 0,
+      satisfaction_rate: 0,
+    };
   },
 
   /**

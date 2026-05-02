@@ -32,12 +32,37 @@ export async function calculateDashboard(userId: string): Promise<DashboardData>
 }
 
 function mapDecisionRow(row: any): any {
+  // row 来自 delegation_logs，字段体系与 decision_logs 不同
+  const scores = (row.llm_scores || {}) as Record<string, number>;
+  const calibrated = (row.calibrated_scores || {}) as Record<string, number>;
   return {
-    id: row.id, timestamp: new Date(row.created_at).getTime(),
-    input_features: { raw_query: row.query_preview, intent: row.intent, complexity_score: row.complexity_score, token_count: row.input_token_count, has_code: row.has_code, has_math: row.has_math },
-    routing: { router_version: row.router_version, scores: { fast: row.fast_score, slow: row.slow_score }, confidence: row.confidence, selected_model: row.selected_model, selected_role: row.selected_role, selection_reason: row.selection_reason },
-    context: { original_tokens: row.context_original_tokens, compressed_tokens: row.context_compressed_tokens, compression_level: row.compression_level, compression_ratio: row.compression_ratio },
-    execution: { model_used: row.model_used, input_tokens: row.exec_input_tokens, output_tokens: row.exec_output_tokens, total_cost_usd: parseFloat(row.total_cost_usd), latency_ms: row.latency_ms, did_fallback: row.did_fallback },
-    feedback: row.feedback_type ? { type: row.feedback_type, score: Number(row.feedback_score) } : undefined,
+    id: row.id,
+    timestamp: new Date(row.created_at).getTime(),
+    input_features: {
+      raw_query: (row as any).user_input || '',  // delegation_logs 无此字段，尝试从关联表获取
+      intent: 'unknown',
+      complexity_score: 0,
+      token_count: 0,
+      has_code: false,
+      has_math: false,
+    },
+    routing: {
+      router_version: row.routing_layer || 'unknown',
+      scores: { fast: scores.direct_answer ?? 0, slow: Math.max(scores.delegate_to_slow ?? 0, scores.execute_task ?? 0) },
+      confidence: row.llm_confidence ?? 0,
+      selected_model: row.model_used || '',
+      selected_role: row.routed_action || '',
+      selection_reason: row.routing_reason || '',
+    },
+    context: { original_tokens: 0, compressed_tokens: 0, compression_level: 'L0', compression_ratio: 0 },
+    execution: {
+      model_used: row.model_used || '',
+      input_tokens: 0,
+      output_tokens: 0,
+      total_cost_usd: parseFloat(row.cost_usd) || 0,
+      latency_ms: row.latency_ms || 0,
+      did_fallback: false,
+    },
+    feedback: undefined, // delegation_logs 无 feedback 字段，后续可关联 feedback_events
   };
 }
